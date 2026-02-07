@@ -6,7 +6,7 @@ import time
 import logging
 import threading
 from datetime import datetime
-from flask import Flask  # Flask import kiya gaya hai
+from flask import Flask
 
 # --- ⚙️ SYSTEM CONFIGURATION ---
 TOKEN = '8426168322:AAFzZgblxuREms-__spalcsti2dDNuLxseI' 
@@ -15,10 +15,9 @@ API_LINK = "https://source-code-api.vercel.app/?num="
 DATA_FILE = "users_db.json"
 
 # --- 🔗 LINKS CONFIG ---
-SUPPORT_GROUP_LINK = "https://t.me/Anysnapsupport"  # Group Link
-UPDATE_CHANNEL_LINK = "https://t.me/+Om1HMs2QTHk1N2Zh"  # Channel Link
+SUPPORT_GROUP_LINK = "https://t.me/Anysnapsupport"
+UPDATE_CHANNEL_LINK = "https://t.me/+Om1HMs2QTHk1N2Zh"
 
-# Bot ko in dono jagah ADMIN hona chahiye
 REQUIRED_CHANNEL = "@Anysnapupdate" 
 REQUIRED_GROUP = "@Anysnapsupport"
 
@@ -71,23 +70,20 @@ def get_user_data(user_id):
         save_db(db)
     return db, str_id
 
-# --- 🔒 STRICT MEMBERSHIP CHECK (BOTH REQUIRED) ---
+# --- 🔒 STRICT MEMBERSHIP CHECK ---
 def check_membership(user_id):
     try:
-        # 1. Check Channel
         user_channel = bot.get_chat_member(REQUIRED_CHANNEL, user_id)
         if user_channel.status not in ['creator', 'administrator', 'member']:
             return False
         
-        # 2. Check Group
         user_group = bot.get_chat_member(REQUIRED_GROUP, user_id)
         if user_group.status not in ['creator', 'administrator', 'member']:
             return False
             
         return True
     except Exception as e:
-        print(f"⚠️ Check Error (Make sure Bot is Admin in both): {e}")
-        # Agar admin nahi hai to filhal pass kar dete hain taaki bot ruke na
+        print(f"⚠️ Check Error: {e}")
         return False 
 
 def send_force_join(chat_id, message_id):
@@ -107,7 +103,6 @@ def send_force_join(chat_id, message_id):
         f"2️⃣ Group Join Karein\n"
         f"3️⃣ Fir **Try Again** dabayein"
     )
-    # Force join message bhi reply karke jayega
     bot.send_message(chat_id, msg, reply_markup=markup, reply_to_message_id=message_id)
 
 # --- ⚡ LOADING ANIMATION ---
@@ -150,7 +145,6 @@ def check_sub_callback(call):
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
-    
     if not check_membership(user_id):
         send_force_join(message.chat.id, message.message_id)
         return
@@ -173,10 +167,9 @@ def start(message):
     btn2 = telebot.types.InlineKeyboardButton("👥 Support", url=SUPPORT_GROUP_LINK)
     markup.add(btn1, btn2)
 
-    # Start message ko bhi reply karke bhejega
     bot.reply_to(message, id_card, reply_markup=markup)
 
-# --- 🔎 COMMAND: NUM ---
+# --- 🔎 COMMAND: NUM (UPDATED LOGIC) ---
 @bot.message_handler(commands=['num'])
 def search_num(message):
     user_id = message.from_user.id
@@ -191,7 +184,6 @@ def search_num(message):
         return
     
     number = args[1].strip()
-    # Status message bhi user ko reply karega
     status_msg = bot.reply_to(message, "```ini\n[ SEARCHING... ]\n```", parse_mode="Markdown")
     loading_effect(message.chat.id, status_msg.message_id)
 
@@ -207,36 +199,42 @@ def search_num(message):
             try:
                 api_data = response.json()
                 main_data = api_data.get('data', {})
-                results = []
-
-                if isinstance(main_data, dict):
-                    if '@Gauravcyber_op' in main_data:
-                        inner_data = main_data['@Gauravcyber_op']
-                        if isinstance(inner_data, dict):
-                            results = inner_data.get('result', [])
-                elif isinstance(main_data, list):
-                    results = main_data
                 
-                if results and isinstance(results, list):
-                    found_data = True
-                    for item in results:
-                        if isinstance(item, dict):
-                            clean_addr = item.get('address', 'Unknown')
-                            if isinstance(clean_addr, str):
-                                clean_addr = clean_addr.replace('!', ', ').strip(', ')
-                            
-                            id_proof = item.get('id_number', 'N/A')
-                            if not id_proof: id_proof = "N/A"
+                # --- 🔥 NEW LOGIC START (Fix for changed API) ---
+                # Check for 'api_1' first as per new structure
+                if 'api_1' in main_data:
+                    item = main_data['api_1']
+                    # Verify if it has minimum required fields
+                    if isinstance(item, dict) and 'Number' in item:
+                         entry = {
+                            "👤 Name": item.get('Owner Name', 'N/A'),
+                            "📞 Mobile": item.get('Number', 'N/A'),
+                            "🌐 State": item.get('Mobile State', 'N/A'),
+                            "🏠 Address": item.get('Owner Address', 'N/A'),
+                            "🆔 SIM Info": item.get('SIM Card', 'N/A'),
+                            "📍 Location": item.get('Mobile Locations', 'N/A')
+                        }
+                         clean_list.append(entry)
+                         found_data = True
 
-                            entry = {
+                # Fallback to old method just in case
+                elif not found_data and '@Gauravcyber_op' in main_data:
+                    inner = main_data['@Gauravcyber_op']
+                    if 'result' in inner and isinstance(inner['result'], list):
+                        for item in inner['result']:
+                             entry = {
                                 "👤 Name": item.get('name', 'N/A'),
                                 "📞 Mobile": item.get('mobile', 'N/A'),
                                 "🌐 Circle": item.get('circle', 'N/A'),
-                                "🏠 Address": clean_addr,
-                                "🆔 ID Proof": id_proof 
+                                "🏠 Address": item.get('address', 'N/A'),
+                                "🆔 ID": item.get('id_number', 'N/A')
                             }
-                            clean_list.append(entry)
-            except:
+                             clean_list.append(entry)
+                             found_data = True
+                # --- 🔥 NEW LOGIC END ---
+
+            except Exception as e:
+                print(f"Parsing Error: {e}")
                 found_data = False
         
         # --- RESULT HANDLING ---
@@ -248,14 +246,12 @@ def search_num(message):
                 "POWERED_BY": "Anysnapsupport"
             }
             
-            # Create File
             json_str = json.dumps(final_json, indent=4, ensure_ascii=False)
             filename = f"Result_{number}.json"
             
             with open(filename, "w", encoding="utf-8") as file:
                 file.write(json_str)
             
-            # Create User Mention Tag (Text wala)
             user_tag = f"[{message.from_user.first_name}](tg://user?id={user_id})"
 
             with open(filename, "rb") as file:
@@ -269,28 +265,27 @@ def search_num(message):
                 
                 bot.delete_message(message.chat.id, status_msg.message_id)
                 
-                # --- YAHAN MAIN CHANGE HAI: reply_to_message_id ---
                 sent_msg = bot.send_document(
                     message.chat.id, 
                     file, 
                     caption=caption_text, 
                     parse_mode="Markdown",
-                    reply_to_message_id=message.message_id  # Ye line message ko quote/tag karegi
+                    reply_to_message_id=message.message_id
                 )
             
             os.remove(filename)
             schedule_delete(message.chat.id, sent_msg.message_id, delay=60)
         
         else:
-            # ❌ SIMPLE NO DATA MESSAGE (Ye bhi reply karega)
             bot.delete_message(message.chat.id, status_msg.message_id)
-            bot.reply_to(message, "📂 **No Data Found** 🚫\n❌ No records for this number.")
+            bot.reply_to(message, "📂 **No Data Found** 🚫\n❌ API response format changed or empty.")
 
     except Exception as e:
+        print(f"Network Error: {e}")
         bot.edit_message_text("⚠️ **Network Error**", message.chat.id, status_msg.message_id)
 
 # --- STARTUP ---
 if __name__ == "__main__":
-    keep_alive()  # Server start before polling
+    keep_alive()
     print(f"🔥 {SYSTEM_NAME} Online...")
     bot.infinity_polling()
