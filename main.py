@@ -110,7 +110,7 @@ def loading_effect(chat_id, message_id):
         "▒▒▒▒▒▒▒▒▒▒ 0% [CONNECTING]",
         "███▒▒▒▒▒▒▒ 25% [API HANDSHAKE]",
         "██████▒▒▒▒ 50% [GETTING DATA]",
-        "█████████▒ 80% [PROCESSING]",
+        "█████████▒ 80% [SORTING DATA]",
         "██████████ 100% [COMPLETED]"
     ]
     for bar in bars:
@@ -168,7 +168,7 @@ def start(message):
 
     bot.reply_to(message, id_card, reply_markup=markup)
 
-# --- 🔎 COMMAND: NUM (NEW API INTEGRATED) ---
+# --- 🔎 COMMAND: NUM (FIXED ORDERING) ---
 @bot.message_handler(commands=['num'])
 def search_num(message):
     user_id = message.from_user.id
@@ -187,40 +187,55 @@ def search_num(message):
     loading_effect(message.chat.id, status_msg.message_id)
 
     try:
-        # 🔥 NEW API URL Structure
         full_url = f"https://numb-api.vercel.app/get-info?phone={number}&apikey=worrior"
         headers = {'User-Agent': 'Mozilla/5.0'}
         
         response = requests.get(full_url, headers=headers, timeout=20)
         found_data = False
-        final_data_list = []
+        clean_list = []
 
         if response.status_code == 200:
             try:
-                api_data = response.json()
+                raw_data = response.json()
                 
-                # Check if API returned meaningful data
-                if api_data:
-                    # Nayi API ka structure clear nahi hai, isliye hum
-                    # jo bhi JSON aaya hai usse directly list me daal denge.
-                    # Isse 'No Data Found' ka error nahi aayega.
+                # --- 🔥 DATA CLEANING & ORDERING LOGIC ---
+                # Hum raw data ko direct dump nahi karenge, balki ek naya 
+                # dictionary banayenge jisme order hum khud decide karenge.
+                
+                if raw_data:
+                    target_data = raw_data
+                    if isinstance(raw_data, list) and len(raw_data) > 0:
+                        target_data = raw_data[0] # List hai to pehla item lo
                     
-                    if isinstance(api_data, list):
-                        final_data_list = api_data
-                    else:
-                        final_data_list.append(api_data)
-                    
-                    found_data = True
+                    if isinstance(target_data, dict):
+                        # Smart fetch: Try lowercase/uppercase keys
+                        def get_val(keys, default="N/A"):
+                            for k in keys:
+                                if k in target_data and target_data[k]:
+                                    return target_data[k]
+                            return default
+
+                        # Create Ordered Entry
+                        entry = {
+                            "👤 Name": get_val(['name', 'Name', 'owner', 'Owner Name', 'caller_name']),
+                            "📞 Mobile": get_val(['mobile', 'number', 'phone', 'Phone'], default=number),
+                            "🌐 Carrier": get_val(['carrier', 'operator', 'sim', 'Sim']),
+                            "📍 Circle": get_val(['circle', 'state', 'region']),
+                            "🏠 Address": get_val(['address', 'location', 'city', 'Address'])
+                        }
+                        
+                        clean_list.append(entry)
+                        found_data = True
             except Exception as e:
                 print(f"Parsing Error: {e}")
                 found_data = False
         
         # --- RESULT HANDLING ---
-        if found_data and final_data_list:
+        if found_data and clean_list:
             final_json = {
                 "STATUS": "SUCCESS",
                 "QUERY": number,
-                "DATA": final_data_list,
+                "DATA": clean_list,
                 "POWERED_BY": "Anysnapsupport"
             }
             
