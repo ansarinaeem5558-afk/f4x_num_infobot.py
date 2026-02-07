@@ -17,13 +17,14 @@ DATA_FILE = "users_db.json"
 SUPPORT_GROUP_LINK = "https://t.me/Anysnapsupport"
 UPDATE_CHANNEL_LINK = "https://t.me/+Om1HMs2QTHk1N2Zh"
 
+# ⚠️ DHYAAN DEIN: Bot ko in dono jagah ADMIN hona zaroori hai
 REQUIRED_CHANNEL = "@Anysnapupdate" 
 REQUIRED_GROUP = "@Anysnapsupport"
 
 SYSTEM_NAME = "Anysnap-SYSTEM"
 # ------------------------------
 
-# --- 🌐 FLASK WEB SERVER KERNEL ---
+# --- 🌐 FLASK WEB SERVER ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -46,7 +47,7 @@ except Exception as e:
     print(f"❌ Token Error: {e}")
     exit()
 
-# --- 💾 DATABASE KERNEL ---
+# --- 💾 DATABASE UTILS ---
 def load_db():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
@@ -69,27 +70,37 @@ def get_user_data(user_id):
         save_db(db)
     return db, str_id
 
-# --- 🔒 STRICT MEMBERSHIP CHECK ---
-def check_membership(user_id):
+# --- 🔒 MEMBERSHIP CHECK (IMPROVED) ---
+def check_membership(user_id, chat_id=None):
+    # Owner ke liye bypass (Testing ke liye)
+    if user_id == OWNER_ID:
+        return True
+
     try:
+        # 1. Check Channel
         user_channel = bot.get_chat_member(REQUIRED_CHANNEL, user_id)
         if user_channel.status not in ['creator', 'administrator', 'member']:
             return False
         
+        # 2. Check Group
         user_group = bot.get_chat_member(REQUIRED_GROUP, user_id)
         if user_group.status not in ['creator', 'administrator', 'member']:
             return False
             
         return True
     except Exception as e:
-        print(f"⚠️ Check Error: {e}")
+        # Agar bot Admin nahi hai to ye error print karega
+        print(f"⚠️ Membership Check Failed: {e}")
+        print("💡 TIP: Bot ko Channel aur Group dono me ADMIN banao!")
+        # Error hone par user ko block na karein (Temporary Fix), 
+        # lekin agar production me chahiye to 'return False' hi rakhein.
         return False 
 
 def send_force_join(chat_id, message_id):
     markup = telebot.types.InlineKeyboardMarkup()
     btn1 = telebot.types.InlineKeyboardButton("📢 Join Update Channel", url=UPDATE_CHANNEL_LINK)
     btn2 = telebot.types.InlineKeyboardButton("👥 Join Support Group", url=SUPPORT_GROUP_LINK)
-    btn3 = telebot.types.InlineKeyboardButton("🔄 Try Again", callback_data="check_subscription")
+    btn3 = telebot.types.InlineKeyboardButton("🔄 Checked? Try Again", callback_data="check_subscription")
     
     markup.add(btn1)
     markup.add(btn2)
@@ -97,10 +108,8 @@ def send_force_join(chat_id, message_id):
     
     msg = (
         f"🛑 **ACCESS DENIED** 🛑\n\n"
-        f"Bot use karne ke liye aapko **Channel** aur **Group** dono join karna hoga.\n\n"
-        f"1️⃣ Channel Join Karein\n"
-        f"2️⃣ Group Join Karein\n"
-        f"3️⃣ Fir **Try Again** dabayein"
+        f"Result dekhne ke liye **Channel** aur **Group** dono join karna zaroori hai.\n\n"
+        f"⚠️ **Note:** Agar aap join hain fir bhi ye aa raha hai, to Admin ko bole bot ko Admin banaye."
     )
     bot.send_message(chat_id, msg, reply_markup=markup, reply_to_message_id=message_id)
 
@@ -108,78 +117,56 @@ def send_force_join(chat_id, message_id):
 def loading_effect(chat_id, message_id):
     bars = [
         "▒▒▒▒▒▒▒▒▒▒ 0% [CONNECTING]",
-        "███▒▒▒▒▒▒▒ 25% [API HANDSHAKE]",
-        "██████▒▒▒▒ 50% [GETTING DATA]",
-        "█████████▒ 80% [SORTING DATA]",
-        "██████████ 100% [COMPLETED]"
+        "████▒▒▒▒▒▒ 40% [FETCHING DATA]",
+        "████████▒▒ 80% [FORMATTING]",
+        "██████████ 100% [DONE]"
     ]
     for bar in bars:
         try:
             bot.edit_message_text(f"```ini\n{bar}\n```", chat_id, message_id, parse_mode="Markdown")
-            time.sleep(0.2) 
+            time.sleep(0.3) 
         except: pass
 
-# --- 🗑️ AUTO DELETE FUNCTION ---
 def schedule_delete(chat_id, message_id, delay=60):
     def delete_task():
         time.sleep(delay)
-        try:
-            bot.delete_message(chat_id, message_id)
-        except Exception as e:
-            print(f"Failed to delete message: {e}")
-    
+        try: bot.delete_message(chat_id, message_id)
+        except: pass
     threading.Thread(target=delete_task).start()
 
-# --- 🔄 CALLBACK QUERY ---
+# --- 🔄 CALLBACK ---
 @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
 def check_sub_callback(call):
     if check_membership(call.from_user.id):
         bot.delete_message(call.message.chat.id, call.message.message_id)
         bot.answer_callback_query(call.id, "✅ Verified!", show_alert=True)
-        bot.send_message(call.message.chat.id, "✅ **Access Granted!**\nType `/num` to search.")
+        bot.send_message(call.message.chat.id, "✅ **Access Granted!**\nAb `/num` command use karein.")
     else:
-        bot.answer_callback_query(call.id, "❌ Join Both Channel & Group First!", show_alert=True)
+        bot.answer_callback_query(call.id, "❌ Abhi bhi join nahi kiya ya Bot Admin nahi hai!", show_alert=True)
 
-# --- 🚀 COMMAND: START ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    user_id = message.from_user.id
-    if not check_membership(user_id):
+    if not check_membership(message.from_user.id, message.chat.id):
         send_force_join(message.chat.id, message.message_id)
         return
 
-    db, str_id = get_user_data(user_id)
-    name = message.from_user.first_name
-    
-    id_card = (
-        f"💳 **WELCOME USER**\n"
-        f"╔══════════════════════╗\n"
-        f"║ 👤 **NAME:** `{name}`\n"
-        f"║ 🆔 **ID:** `{user_id}`\n"
-        f"╚══════════════════════╝\n\n"
-        f"🤖 **COMMANDS:**\n"
-        f"👉 `/num 99xxxxxx` - Start Search"
-    )
-    
     markup = telebot.types.InlineKeyboardMarkup()
-    btn1 = telebot.types.InlineKeyboardButton("📢 Updates", url=UPDATE_CHANNEL_LINK)
-    btn2 = telebot.types.InlineKeyboardButton("👥 Support", url=SUPPORT_GROUP_LINK)
-    markup.add(btn1, btn2)
+    markup.add(telebot.types.InlineKeyboardButton("📢 Updates", url=UPDATE_CHANNEL_LINK))
+    
+    bot.reply_to(message, "👋 **Welcome!**\nUse `/num 99xxxxxx` to search.", reply_markup=markup)
 
-    bot.reply_to(message, id_card, reply_markup=markup)
-
-# --- 🔎 COMMAND: NUM (FIXED ORDERING) ---
+# --- 🔎 COMMAND: NUM (FIXED FORMAT & LOGIC) ---
 @bot.message_handler(commands=['num'])
 def search_num(message):
     user_id = message.from_user.id
 
-    if not check_membership(user_id):
+    if not check_membership(user_id, message.chat.id):
         send_force_join(message.chat.id, message.message_id)
         return
 
     args = message.text.split()
     if len(args) < 2:
-        bot.reply_to(message, "⚠️ **ERROR**\nFormat: `/num 9876543210`", parse_mode="Markdown")
+        bot.reply_to(message, "⚠️ **Format:** `/num 9876543210`")
         return
     
     number = args[1].strip()
@@ -187,99 +174,103 @@ def search_num(message):
     loading_effect(message.chat.id, status_msg.message_id)
 
     try:
+        # API URL (Jo tumne di thi)
         full_url = f"https://numb-api.vercel.app/get-info?phone={number}&apikey=worrior"
         headers = {'User-Agent': 'Mozilla/5.0'}
         
-        response = requests.get(full_url, headers=headers, timeout=20)
+        response = requests.get(full_url, headers=headers, timeout=25)
+        
         found_data = False
         clean_list = []
 
         if response.status_code == 200:
             try:
-                raw_data = response.json()
+                raw = response.json()
                 
-                # --- 🔥 DATA CLEANING & ORDERING LOGIC ---
-                # Hum raw data ko direct dump nahi karenge, balki ek naya 
-                # dictionary banayenge jisme order hum khud decide karenge.
-                
-                if raw_data:
-                    target_data = raw_data
-                    if isinstance(raw_data, list) and len(raw_data) > 0:
-                        target_data = raw_data[0] # List hai to pehla item lo
-                    
-                    if isinstance(target_data, dict):
-                        # Smart fetch: Try lowercase/uppercase keys
-                        def get_val(keys, default="N/A"):
-                            for k in keys:
-                                if k in target_data and target_data[k]:
-                                    return target_data[k]
-                            return default
+                # --- 🔥 DATA EXTRACTION & MAPPING ---
+                # Hum multiple keys check karenge taaki N/A na aaye
+                def get_k(data, keys, default="N/A"):
+                    if not isinstance(data, dict): return default
+                    for k in keys:
+                        if k in data and data[k]: return data[k]
+                    return default
 
-                        # Create Ordered Entry
-                        entry = {
-                            "👤 Name": get_val(['name', 'Name', 'owner', 'Owner Name', 'caller_name']),
-                            "📞 Mobile": get_val(['mobile', 'number', 'phone', 'Phone'], default=number),
-                            "🌐 Carrier": get_val(['carrier', 'operator', 'sim', 'Sim']),
-                            "📍 Circle": get_val(['circle', 'state', 'region']),
-                            "🏠 Address": get_val(['address', 'location', 'city', 'Address'])
-                        }
-                        
-                        clean_list.append(entry)
-                        found_data = True
+                # Agar response list hai to loop chalao, agar dict hai to list banao
+                items = raw if isinstance(raw, list) else [raw]
+                
+                for item in items:
+                    if isinstance(item, dict):
+                        # Keys mapping for different API structures
+                        name = get_k(item, ['name', 'Name', 'owner_name', 'caller_name', 'f_name'])
+                        mobile = get_k(item, ['mobile', 'number', 'phone', 'Number'], default=number)
+                        circle = get_k(item, ['circle', 'state', 'carrier', 'operator'])
+                        address = get_k(item, ['address', 'location', 'city', 'Address'])
+                        id_proof = get_k(item, ['id_number', 'id_proof', 'voter_id', 'email'], default="N/A")
+
+                        # Sirf tab add karo agar kuch data mila ho (Name ya Address)
+                        if name != "N/A" or address != "N/A" or circle != "N/A":
+                            entry = {
+                                "👤 Name": name,
+                                "📞 Mobile": mobile,
+                                "🌐 Circle": circle,
+                                "🏠 Address": address,
+                                "🆔 ID Proof": id_proof
+                            }
+                            clean_list.append(entry)
+                            found_data = True
+
             except Exception as e:
                 print(f"Parsing Error: {e}")
-                found_data = False
-        
-        # --- RESULT HANDLING ---
+
+        # --- RESULT GENERATION (STRICT FORMAT) ---
         if found_data and clean_list:
             final_json = {
-                "STATUS": "SUCCESS",
+                "STATUS": "✅ SUCCESS",
                 "QUERY": number,
                 "DATA": clean_list,
-                "POWERED_BY": "Anysnapsupport"
+                "SOURCE": {
+                    "CHANNEL": UPDATE_CHANNEL_LINK,
+                    "GROUP": SUPPORT_GROUP_LINK
+                }
             }
             
-            json_str = json.dumps(final_json, indent=4, ensure_ascii=False)
+            # File Creation
             filename = f"Result_{number}.json"
-            
-            with open(filename, "w", encoding="utf-8") as file:
-                file.write(json_str)
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(final_json, f, indent=4, ensure_ascii=False)
             
             user_tag = f"[{message.from_user.first_name}](tg://user?id={user_id})"
+            caption_text = (
+                f"📂 **Data Found**\n"
+                f"👤 **User:** {user_tag}\n"
+                f"📱 **Num:** `{number}`\n"
+                f"⚡ **By:** {SYSTEM_NAME}"
+            )
 
-            with open(filename, "rb") as file:
-                caption_text = (
-                    f"📂 **Data Found**\n"
-                    f"👤 **Requested by:** {user_tag}\n"
-                    f"📱 ID: `{number}`\n"
-                    f"⏳ _Auto-delete in 60s_\n\n"
-                    f"👑 **Powered by** @Anysnapsupport"
-                )
-                
-                bot.delete_message(message.chat.id, status_msg.message_id)
-                
+            bot.delete_message(message.chat.id, status_msg.message_id)
+            with open(filename, "rb") as f:
                 sent_msg = bot.send_document(
                     message.chat.id, 
-                    file, 
+                    f, 
                     caption=caption_text, 
-                    parse_mode="Markdown",
+                    parse_mode="Markdown", 
                     reply_to_message_id=message.message_id
                 )
             
             os.remove(filename)
-            schedule_delete(message.chat.id, sent_msg.message_id, delay=60)
-        
+            schedule_delete(message.chat.id, sent_msg.message_id)
+
         else:
+            # Empty Response Handling
             bot.delete_message(message.chat.id, status_msg.message_id)
-            error_text = f"📂 **No Data Found** 🚫\n❌ Server returned code: {response.status_code}"
-            bot.reply_to(message, error_text)
+            bot.reply_to(message, "📂 **No Data Found** 🚫\n❌ Server returned valid response but no details.")
 
     except Exception as e:
-        print(f"Network Error: {e}")
-        bot.edit_message_text("⚠️ **API Error** (Check Console)", message.chat.id, status_msg.message_id)
+        print(f"Error: {e}")
+        bot.edit_message_text("⚠️ **Server Error**", message.chat.id, status_msg.message_id)
 
-# --- STARTUP ---
+# --- RUN ---
 if __name__ == "__main__":
     keep_alive()
-    print(f"🔥 {SYSTEM_NAME} Online...")
+    print("🔥 Bot Started...")
     bot.infinity_polling()
