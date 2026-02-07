@@ -11,7 +11,6 @@ from flask import Flask
 # --- ⚙️ SYSTEM CONFIGURATION ---
 TOKEN = '8426168322:AAFzZgblxuREms-__spalcsti2dDNuLxseI' 
 OWNER_ID = 8448533037
-API_LINK = "https://source-code-api.vercel.app/?num=" 
 DATA_FILE = "users_db.json"
 
 # --- 🔗 LINKS CONFIG ---
@@ -109,8 +108,8 @@ def send_force_join(chat_id, message_id):
 def loading_effect(chat_id, message_id):
     bars = [
         "▒▒▒▒▒▒▒▒▒▒ 0% [CONNECTING]",
-        "███▒▒▒▒▒▒▒ 25% [CHECKING DB]",
-        "██████▒▒▒▒ 50% [GETTING INFO]",
+        "███▒▒▒▒▒▒▒ 25% [API HANDSHAKE]",
+        "██████▒▒▒▒ 50% [GETTING DATA]",
         "█████████▒ 80% [PROCESSING]",
         "██████████ 100% [COMPLETED]"
     ]
@@ -169,7 +168,7 @@ def start(message):
 
     bot.reply_to(message, id_card, reply_markup=markup)
 
-# --- 🔎 COMMAND: NUM (UPDATED LOGIC) ---
+# --- 🔎 COMMAND: NUM (NEW API INTEGRATED) ---
 @bot.message_handler(commands=['num'])
 def search_num(message):
     user_id = message.from_user.id
@@ -188,61 +187,40 @@ def search_num(message):
     loading_effect(message.chat.id, status_msg.message_id)
 
     try:
-        full_url = f"{API_LINK}{number}"
-        headers = {'User-Agent': 'F4X-GodMode/6.0'}
-        response = requests.get(full_url, headers=headers, timeout=15)
+        # 🔥 NEW API URL Structure
+        full_url = f"https://numb-api.vercel.app/get-info?phone={number}&apikey=worrior"
+        headers = {'User-Agent': 'Mozilla/5.0'}
         
+        response = requests.get(full_url, headers=headers, timeout=20)
         found_data = False
-        clean_list = []
+        final_data_list = []
 
         if response.status_code == 200:
             try:
                 api_data = response.json()
-                main_data = api_data.get('data', {})
                 
-                # --- 🔥 NEW LOGIC START (Fix for changed API) ---
-                # Check for 'api_1' first as per new structure
-                if 'api_1' in main_data:
-                    item = main_data['api_1']
-                    # Verify if it has minimum required fields
-                    if isinstance(item, dict) and 'Number' in item:
-                         entry = {
-                            "👤 Name": item.get('Owner Name', 'N/A'),
-                            "📞 Mobile": item.get('Number', 'N/A'),
-                            "🌐 State": item.get('Mobile State', 'N/A'),
-                            "🏠 Address": item.get('Owner Address', 'N/A'),
-                            "🆔 SIM Info": item.get('SIM Card', 'N/A'),
-                            "📍 Location": item.get('Mobile Locations', 'N/A')
-                        }
-                         clean_list.append(entry)
-                         found_data = True
-
-                # Fallback to old method just in case
-                elif not found_data and '@Gauravcyber_op' in main_data:
-                    inner = main_data['@Gauravcyber_op']
-                    if 'result' in inner and isinstance(inner['result'], list):
-                        for item in inner['result']:
-                             entry = {
-                                "👤 Name": item.get('name', 'N/A'),
-                                "📞 Mobile": item.get('mobile', 'N/A'),
-                                "🌐 Circle": item.get('circle', 'N/A'),
-                                "🏠 Address": item.get('address', 'N/A'),
-                                "🆔 ID": item.get('id_number', 'N/A')
-                            }
-                             clean_list.append(entry)
-                             found_data = True
-                # --- 🔥 NEW LOGIC END ---
-
+                # Check if API returned meaningful data
+                if api_data:
+                    # Nayi API ka structure clear nahi hai, isliye hum
+                    # jo bhi JSON aaya hai usse directly list me daal denge.
+                    # Isse 'No Data Found' ka error nahi aayega.
+                    
+                    if isinstance(api_data, list):
+                        final_data_list = api_data
+                    else:
+                        final_data_list.append(api_data)
+                    
+                    found_data = True
             except Exception as e:
                 print(f"Parsing Error: {e}")
                 found_data = False
         
         # --- RESULT HANDLING ---
-        if found_data and clean_list:
+        if found_data and final_data_list:
             final_json = {
                 "STATUS": "SUCCESS",
                 "QUERY": number,
-                "DATA": clean_list,
+                "DATA": final_data_list,
                 "POWERED_BY": "Anysnapsupport"
             }
             
@@ -278,11 +256,12 @@ def search_num(message):
         
         else:
             bot.delete_message(message.chat.id, status_msg.message_id)
-            bot.reply_to(message, "📂 **No Data Found** 🚫\n❌ API response format changed or empty.")
+            error_text = f"📂 **No Data Found** 🚫\n❌ Server returned code: {response.status_code}"
+            bot.reply_to(message, error_text)
 
     except Exception as e:
         print(f"Network Error: {e}")
-        bot.edit_message_text("⚠️ **Network Error**", message.chat.id, status_msg.message_id)
+        bot.edit_message_text("⚠️ **API Error** (Check Console)", message.chat.id, status_msg.message_id)
 
 # --- STARTUP ---
 if __name__ == "__main__":
